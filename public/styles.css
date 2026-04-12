@@ -1,0 +1,482 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: #f5f5f5;
+    color: #333;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* Header */
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 2rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
+
+.breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+}
+
+.breadcrumb-btn {
+    background-color: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: background-color 0.2s;
+}
+
+.breadcrumb-btn:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Main Content */
+.main-content {
+    padding: 2rem;
+}
+
+.folders-section,
+.images-section {
+    margin-bottom: 3rem;
+}
+
+.folders-section h2,
+.images-section h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    color: #333;
+}
+
+/* Grid Layout */
+.items-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.loading {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 2rem;
+    color: #999;
+}
+
+/* Folder Item */
+.folder-item,
+.image-item {
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+}
+
+.folder-item:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.image-item:hover {
+    /* No translateY — it fights the expanding thumb and reads as a “jump”. */
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+    z-index: 1;
+    overflow: visible;
+}
+
+.folder-item {
+    background: linear-gradient(135deg, #f9f7ff 0%, #f0e7ff 100%);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
+    text-align: center;
+}
+
+.folder-item .icon {
+    font-size: 3rem;
+    margin-bottom: 0.5rem;
+}
+
+.folder-item .name {
+    font-weight: 500;
+    word-break: break-word;
+    font-size: 0.95rem;
+}
+
+/* Image Thumbnail — fixed square cell; hover expands frame to photo aspect + light zoom */
+.image-item {
+    --thumb-hover-zoom: 1.1;
+    --thumb-magnify: 1.07;
+    --thumb-hover-ease: cubic-bezier(0.32, 0.72, 0, 1);
+    --thumb-hover-duration: 0.38s;
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    overflow: hidden;
+}
+
+.image-thumb-frame {
+    position: absolute;
+    z-index: 0;
+    /* Fixed pivot: cell center. Do not animate left/top/transform — %-based translate
+       uses the element’s own size, so animating size + translate(-50%,-50%) jerks. */
+    left: 50%;
+    top: 50%;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    transform: translate(-50%, -50%);
+    transition:
+        width var(--thumb-hover-duration) var(--thumb-hover-ease),
+        height var(--thumb-hover-duration) var(--thumb-hover-ease),
+        box-shadow var(--thumb-hover-duration) var(--thumb-hover-ease),
+        border-radius var(--thumb-hover-duration) var(--thumb-hover-ease);
+}
+
+/*
+ * Hover: same center pivot; only width/height change. Sizes are explicit calcs (not
+ * height:auto + aspect-ratio) so both axes interpolate smoothly. object-fit: cover +
+ * matching AR shows the full photo; --thumb-magnify scales the bitmap from its center.
+ */
+.image-item:hover .image-thumb-frame {
+    z-index: 2;
+    width: calc(100% * var(--thumb-hover-zoom));
+    height: calc((100% * var(--thumb-hover-zoom)) / var(--thumb-ar, 1));
+    border-radius: 8px;
+    box-shadow:
+        0 12px 32px rgba(0, 0, 0, 0.22),
+        0 4px 10px rgba(0, 0, 0, 0.12);
+}
+
+.image-item[data-thumb-orientation="landscape"]:hover .image-thumb-frame {
+    height: calc(100% * var(--thumb-hover-zoom));
+    width: calc((100% * var(--thumb-hover-zoom)) * var(--thumb-ar, 1));
+}
+
+.image-thumb-frame .image-thumbnail {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    display: block;
+    transform: scale(1);
+    transform-origin: center center;
+    transition: transform var(--thumb-hover-duration) var(--thumb-hover-ease);
+}
+
+.image-item:hover .image-thumb-frame .image-thumbnail {
+    transform: scale(var(--thumb-magnify));
+}
+
+/* Thumbnail placeholder while the preview loads */
+.image-item.is-loading .image-thumbnail {
+    opacity: 0;
+}
+
+.image-item.is-loading::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background: linear-gradient(110deg, #eef2f7 0%, #f8fafc 40%, #eef2f7 80%);
+    background-size: 200% 100%;
+    animation: thumb-shimmer 1.1s linear infinite;
+}
+
+.image-item.is-loading::after {
+    content: "Loading…";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    font-size: 0.9rem;
+    color: #9ca3af;
+    letter-spacing: 0.01em;
+    pointer-events: none;
+}
+
+@keyframes thumb-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.image-item-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 0.5rem;
+    font-size: 0.85rem;
+    word-break: break-word;
+    max-height: 40%;
+    overflow: hidden;
+}
+
+/* Delete overlay (only on hover / focus) */
+.image-delete-overlay {
+    position: absolute;
+    left: calc(100% - 0.5rem);
+    top: calc(100% - 0.5rem);
+    z-index: 3;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 0.15s, transform 0.15s, left 0.2s ease, top 0.2s ease;
+    pointer-events: none;
+    margin-top: 0;
+}
+
+.image-item:hover .image-delete-overlay,
+.image-item:focus-within .image-delete-overlay {
+    opacity: 0.8;
+    left: calc(50% + (50% * var(--thumb-hover-zoom)) - 0.5rem);
+    top: calc(50% + ((50% * var(--thumb-hover-zoom)) / var(--thumb-ar, 1)) - 0.5rem);
+    transform: translate(-100%, calc(-100% - 0.5rem));
+    pointer-events: auto;
+}
+
+.image-item[data-thumb-orientation="landscape"]:hover .image-delete-overlay,
+.image-item[data-thumb-orientation="landscape"]:focus-within .image-delete-overlay {
+    left: calc(50% + ((50% * var(--thumb-hover-zoom)) * var(--thumb-ar, 1)) - 0.5rem);
+    top: calc(50% + (50% * var(--thumb-hover-zoom)) - 0.5rem);
+}
+
+/* Don't show delete button while the placeholder overlay is on top */
+.image-item.is-loading .image-delete-overlay {
+    opacity: 0 !important;
+    pointer-events: none;
+}
+
+.image-delete-overlay .btn {
+    flex: 0 0 auto; /* override generic `.btn { flex: 1 }` */
+}
+
+/* Folder delete overlay (only on hover / focus) */
+.folder-delete-overlay {
+    position: absolute;
+    bottom: 0.5rem;
+    right: 0.5rem;
+    z-index: 2;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 0.15s, transform 0.15s;
+    pointer-events: none;
+    margin-top: 0;
+}
+
+.folder-item:hover .folder-delete-overlay,
+.folder-item:focus-within .folder-delete-overlay {
+    opacity: 0.8;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.folder-delete-overlay .btn {
+    flex: 0 0 auto; /* override generic `.btn { flex: 1 }` */
+}
+
+/*
+ * WebKit (Safari) often leaves :hover / compositor state wrong after switching
+ * apps or opening another window. Force-reset visuals until the next pointer move.
+ */
+body.clear-stale-hover .image-delete-overlay,
+body.clear-stale-hover .folder-delete-overlay {
+    opacity: 0 !important;
+    transform: translateY(-4px) !important;
+    pointer-events: none !important;
+}
+
+body.clear-stale-hover .image-item:hover,
+body.clear-stale-hover .folder-item:hover {
+    transform: none !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+body.clear-stale-hover .image-item:hover {
+    overflow: hidden !important;
+}
+
+body.clear-stale-hover .image-item:hover .image-thumb-frame {
+    left: 50% !important;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+body.clear-stale-hover .image-item:hover .image-thumb-frame .image-thumbnail {
+    transform: none !important;
+}
+
+
+/* Buttons */
+.item-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background-color 0.2s;
+    flex: 1;
+}
+
+.btn-primary {
+    background-color: #667eea;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #5568d3;
+}
+
+.btn-danger {
+    background-color: #ef4444;
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #dc2626;
+}
+
+.btn-secondary {
+    background-color: #9ca3af;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background-color: #6b7280;
+}
+
+.btn-small {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.75rem;
+}
+
+/* Modals */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    overflow: auto;
+}
+
+.modal.show {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content.small {
+    background-color: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    width: 90%;
+    max-width: 400px;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+}
+
+.modal-actions button {
+    flex: 1;
+    max-width: 150px;
+}
+
+#deleteMessage {
+    margin: 1rem 0;
+    color: #666;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .header {
+        padding: 1rem;
+    }
+
+    .header h1 {
+        font-size: 1.8rem;
+    }
+
+    .main-content {
+        padding: 1rem;
+    }
+
+    .items-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .items-grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 0.8rem;
+    }
+
+    .folder-item .icon {
+        font-size: 2rem;
+    }
+
+    .image-controls {
+        flex-wrap: wrap;
+    }
+}
+
+/* Empty State */
+.empty-message {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 2rem;
+    color: #999;
+    font-style: italic;
+}
