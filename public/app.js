@@ -19,6 +19,7 @@ const deleteMessage = document.getElementById('deleteMessage');
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     await fetchRootPathFromServer();
+    applyPathFromUrl();
     loadContent();
     setupEventListeners();
 });
@@ -51,6 +52,11 @@ function setupEventListeners() {
 
     // Some browsers/apps do not always emit visibility or focus in a consistent order.
     window.addEventListener('focus', onReturnToPhotoBrowser);
+
+    window.addEventListener('popstate', () => {
+        applyPathFromUrl();
+        loadContent();
+    });
 }
 
 function onReturnToPhotoBrowser() {
@@ -141,6 +147,26 @@ function isSubpath(prefix, path) {
         return cleanPath.startsWith(cleanPrefix + '/');
 }
 
+function pathsEqual(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string') return false;
+    const na = a.replace(/\/+$/, '') || '/';
+    const nb = b.replace(/\/+$/, '') || '/';
+    return na === nb;
+}
+
+function urlForPath(p) {
+    const pathname = window.location.pathname || '/';
+    if (pathsEqual(p, rootPath)) {
+        return pathname;
+    }
+    return `${pathname}?dir=${encodeURIComponent(p)}`;
+}
+
+function applyPathFromUrl() {
+    const dir = new URLSearchParams(window.location.search).get('dir');
+    currentPath = dir ? dir : null;
+}
+
 function updateBreadcrumb() {
     const currentPathWithoutRoot = isSubpath(rootPath, currentPath) ?
         currentPath.slice(rootPath.length) : currentPath;
@@ -156,6 +182,7 @@ function updateBreadcrumb() {
 function navigateTo(path) {
     console.log('Navigating to:', path);
     currentPath = path;
+    history.pushState(null, '', urlForPath(path));
     loadContent();
 }
 
