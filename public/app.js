@@ -173,7 +173,7 @@ function updateBreadcrumb() {
     const parts = [rootPath, ...currentPathWithoutRoot.split("/").filter(p => p)];
     const buttons = parts.map((part, index) => {
         const path = parts.slice(0, index + 1).join('/');
-        return `<button class="breadcrumb-btn" onclick="navigateTo('${escapeHtml(path)}')">${escapeHtml(part)}</button>`;
+        return `<button class="breadcrumb-btn" onclick="navigateTo('${escapeForInlineHandlerArg(path)}')">${escapeHtml(part)}</button>`;
     }).join(' / ');
 
     breadcrumbPath.innerHTML = buttons ? buttons : '';
@@ -200,12 +200,12 @@ function renderFolders(folders) {
         }
 
         foldersList.innerHTML = folders.map(folder => `
-            <div class="folder-item" tabindex="0" onclick="navigateTo('${escapeHtml(folder.path)}')">
+            <div class="folder-item" tabindex="0" onclick="navigateTo('${escapeForInlineHandlerArg(folder.path)}')">
                 <div class="icon">📁</div>
                 <div class="name" title="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</div>
                 <div class="folder-delete-overlay item-actions">
-                    <button class="btn btn-secondary btn-small" onclick="event.stopPropagation(); revealInFileManager('${escapeHtml(folder.path)}', true)">Reveal</button>
-                    <button class="btn btn-danger btn-small" onclick="event.stopPropagation(); confirmDeleteFolder('${escapeHtml(folder.path)}', '${escapeHtml(folder.name)}')">Delete</button>
+                    <button class="btn btn-secondary btn-small" onclick="event.stopPropagation(); revealInFileManager('${escapeForInlineHandlerArg(folder.path)}', true)">Reveal</button>
+                    <button class="btn btn-danger btn-small" onclick="event.stopPropagation(); confirmDeleteFolder('${escapeForInlineHandlerArg(folder.path)}', '${escapeForInlineHandlerArg(folder.name)}')">Delete</button>
                 </div>
             </div>
         `).join('');
@@ -232,7 +232,7 @@ function renderImages(images) {
                         src="/api/thumbnail?path=${encodeURIComponent(image.path)}&size=320&fit=inside"
                         data-image-path="${escapeHtml(image.path)}"
                         alt="${escapeHtml(image.name)}"
-                        onclick="openImageInNewTab('${escapeHtml(image.path)}')"
+                        onclick="openImageInNewTab('${escapeForInlineHandlerArg(image.path)}')"
                         loading="lazy"
                         decoding="async"
                         onload="handleThumbnailLoad(this)"
@@ -240,11 +240,11 @@ function renderImages(images) {
                 </div>
                 <div class="image-delete-overlay item-actions">
                     <button class="btn btn-secondary btn-small"
-                        onclick="event.stopPropagation(); revealInFileManager('${escapeHtml(image.path)}', false)">
+                        onclick="event.stopPropagation(); revealInFileManager('${escapeForInlineHandlerArg(image.path)}', false)">
                         Reveal
                     </button>
                     <button class="btn btn-danger btn-small"
-                        onclick="event.stopPropagation(); confirmDeleteImage('${escapeHtml(image.path)}', '${escapeHtml(image.name)}')">
+                        onclick="event.stopPropagation(); confirmDeleteImage('${escapeForInlineHandlerArg(image.path)}', '${escapeForInlineHandlerArg(image.name)}')">
                         Delete
                     </button>
                 </div>
@@ -396,4 +396,19 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+/** For paths/names embedded in `onclick="...('...')"` — `escapeHtml` alone leaves `'` intact and breaks the JS string. */
+function escapeJsSingleQuotedString(s) {
+    return String(s)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\r/g, '\\r')
+        .replace(/\n/g, '\\n')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
+}
+
+function escapeForInlineHandlerArg(s) {
+    return escapeHtml(escapeJsSingleQuotedString(s));
 }
