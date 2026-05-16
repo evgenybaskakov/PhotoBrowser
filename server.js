@@ -1,9 +1,13 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const cors = require('cors');
 const sharp = require('sharp');
 const { execFile } = require('child_process');
+const { promisify } = require('util');
+
+const execFileAsync = promisify(execFile);
 
 const app = express();
 const PORT = 3000;
@@ -208,18 +212,109 @@ app.get('/api/thumbnail', async (req, res) => {
   }
 });
 
+function escapePowerShellSingleQuoted(value) {
+  return String(value).replace(/'/g, "''");
+}
+
+function uniqueTrashDestination(trashFilesDir, basename) {
+  let destPath = path.join(trashFilesDir, basename);
+  if (!fs.existsSync(destPath)) {
+    return destPath;
+  }
+
+  const ext = path.extname(basename);
+  const stem = path.basename(basename, ext);
+  let counter = 1;
+  while (fs.existsSync(destPath)) {
+    destPath = path.join(trashFilesDir, `${stem}_${counter}${ext}`);
+    counter += 1;
+  }
+  return destPath;
+}
+
+/** Resolved browsing root for path security checks. */
+function getResolvedPhotoDir() {
+  return path.resolve(getPhotoDir() || '');
+}
+
+/** True when `targetPath` is the photo root or a path inside it. */
+function isPathInsidePhotoDir(targetPath, photoDir) {
+  if (targetPath === photoDir) return true;
+  return targetPath.startsWith(photoDir + path.sep);
+}
+
 /**
- * Delete file
+ * Move a file or directory to the system trash / recycle bin.
+ */
+async function moveToTrash(fullPath) {
+  const platform = process.platform;
+
+  if (platform === 'darwin') {
+    // Use FileManager.trashItem (not Finder AppleScript) so paths with spaces
+    // and non-ASCII names are handled reliably.
+    const swift = [
+      'import Foundation',
+      'let url = URL(fileURLWithPath: CommandLine.arguments[1])',
+      'do {',
+      '  try FileManager.default.trashItem(at: url, resultingItemURL: nil)',
+      '} catch {',
+      '  fputs(error.localizedDescription + "\\n", stderr)',
+      '  exit(1)',
+      '}'
+    ].join('\n');
+    await execFileAsync('swift', ['-e', swift, fullPath]);
+    return;
+  }
+
+  if (platform === 'win32') {
+    const stats = fs.statSync(fullPath);
+    const escaped = escapePowerShellSingleQuoted(fullPath);
+    const command = stats.isDirectory()
+      ? `[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory('${escaped}','OnlyErrorDialog','SendToRecycleBin')`
+      : `[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${escaped}','OnlyErrorDialog','SendToRecycleBin')`;
+    await execFileAsync('powershell', [
+      '-NoProfile',
+      '-Command',
+      `Add-Type -AssemblyName Microsoft.VisualBasic; ${command}`
+    ]);
+    return;
+  }
+
+  const trashFilesDir = path.join(os.homedir(), '.local/share/Trash/files');
+  const trashInfoDir = path.join(os.homedir(), '.local/share/Trash/info');
+  fs.mkdirSync(trashFilesDir, { recursive: true });
+  fs.mkdirSync(trashInfoDir, { recursive: true });
+
+  const basename = path.basename(fullPath);
+  const destPath = uniqueTrashDestination(trashFilesDir, basename);
+  const infoPath = path.join(trashInfoDir, `${path.basename(destPath)}.trashinfo`);
+  const deletionDate = new Date().toISOString().slice(0, 19);
+  const trashInfo = `[Trash Info]\nPath=${encodeURIComponent(fullPath)}\nDeletionDate=${deletionDate}\n`;
+
+  fs.renameSync(fullPath, destPath);
+  fs.writeFileSync(infoPath, trashInfo);
+}
+
+function clearThumbnailCacheForPath(fullPath) {
+  for (const key of thumbCache.keys()) {
+    if (key.startsWith(`${fullPath}|`) || key.startsWith(`${fullPath}${path.sep}`)) {
+      thumbCache.delete(key);
+    }
+  }
+}
+
+/**
+ * Move file to trash
  * DELETE /api/file?path=/path/to/file
  */
-app.delete('/api/file', (req, res) => {
+app.delete('/api/file', async (req, res) => {
   try {
     const filePath = req.query.path;
-    const photoDir = getPhotoDir();
+    const photoDir = getResolvedPhotoDir();
     const fullPath = path.resolve(photoDir, filePath);
 
     // Security: prevent directory traversal
-    if (!fullPath.startsWith(photoDir)) {
+    if (!isPathInsidePhotoDir(fullPath, photoDir)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -227,30 +322,32 @@ app.delete('/api/file', (req, res) => {
       return res.status(404).json({ error: 'File not found' });
     }
 
-    fs.unlinkSync(fullPath);
-    // Best-effort cache clear for this file
-    for (const key of thumbCache.keys()) {
-      if (key.startsWith(`${fullPath}|`)) thumbCache.delete(key);
+    const stats = fs.statSync(fullPath);
+    if (!stats.isFile()) {
+      return res.status(400).json({ error: 'Not a file' });
     }
-    res.json({ success: true, message: 'File deleted' });
+
+    await moveToTrash(fullPath);
+    clearThumbnailCacheForPath(fullPath);
+    res.json({ success: true, message: 'File moved to trash' });
   } catch (error) {
-    console.error('Error deleting file:', error);
+    console.error('Error moving file to trash:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 /**
- * Delete directory
+ * Move directory to trash
  * DELETE /api/directory?path=/path/to/folder
  */
-app.delete('/api/directory', (req, res) => {
+app.delete('/api/directory', async (req, res) => {
   try {
     const dirPath = req.query.path;
-    const photoDir = getPhotoDir();
+    const photoDir = getResolvedPhotoDir();
     const fullPath = path.resolve(photoDir, dirPath);
 
     // Security: prevent directory traversal
-    if (!fullPath.startsWith(photoDir)) {
+    if (!isPathInsidePhotoDir(fullPath, photoDir)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -263,15 +360,11 @@ app.delete('/api/directory', (req, res) => {
       return res.status(400).json({ error: 'Not a directory' });
     }
 
-    // Recursively delete directory
-    fs.rmSync(fullPath, { recursive: true, force: true });
-    // Best-effort cache clear for directory
-    for (const key of thumbCache.keys()) {
-      if (key.startsWith(`${fullPath}${path.sep}`) || key.startsWith(`${fullPath}|`)) thumbCache.delete(key);
-    }
-    res.json({ success: true, message: 'Directory deleted' });
+    await moveToTrash(fullPath);
+    clearThumbnailCacheForPath(fullPath);
+    res.json({ success: true, message: 'Directory moved to trash' });
   } catch (error) {
-    console.error('Error deleting directory:', error);
+    console.error('Error moving directory to trash:', error);
     res.status(500).json({ error: error.message });
   }
 });

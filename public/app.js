@@ -205,7 +205,7 @@ function renderFolders(folders) {
                 <div class="name" title="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</div>
                 <div class="folder-delete-overlay item-actions">
                     <button class="btn btn-secondary btn-small" onclick="event.stopPropagation(); revealInFileManager('${escapeForInlineHandlerArg(folder.path)}', true)">Reveal</button>
-                    <button class="btn btn-danger btn-small" onclick="event.stopPropagation(); confirmDeleteFolder('${escapeForInlineHandlerArg(folder.path)}', '${escapeForInlineHandlerArg(folder.name)}')">Delete</button>
+                    <button class="btn btn-danger btn-small" onclick="event.stopPropagation(); confirmDeleteFolder('${escapeForInlineHandlerArg(folder.path)}', '${escapeForInlineHandlerArg(folder.name)}')">Trash</button>
                 </div>
             </div>
         `).join('');
@@ -245,7 +245,7 @@ function renderImages(images) {
                     </button>
                     <button class="btn btn-danger btn-small"
                         onclick="event.stopPropagation(); confirmDeleteImage('${escapeForInlineHandlerArg(image.path)}', '${escapeForInlineHandlerArg(image.name)}')">
-                        Delete
+                        Trash
                     </button>
                 </div>
             </div>
@@ -356,13 +356,13 @@ function refreshThumbnailByPath(imagePath) {
 
 function confirmDeleteImage(imagePath, imageName) {
     itemToDelete = { path: imagePath, isFolder: false };
-    deleteMessage.textContent = `Are you sure you want to delete "${imageName}"? This cannot be undone.`;
+    deleteMessage.textContent = `Move "${imageName}" to the Trash? You can restore it from your system trash.`;
     deleteModal.classList.add('show');
 }
 
 function confirmDeleteFolder(folderPath, folderName) {
     itemToDelete = { path: folderPath, isFolder: true };
-    deleteMessage.textContent = `Are you sure you want to delete the folder "${folderName}" and all its contents? This cannot be undone.`;
+    deleteMessage.textContent = `Move the folder "${folderName}" and all its contents to the Trash? You can restore it from your system trash.`;
     deleteModal.classList.add('show');
 }
 
@@ -381,14 +381,14 @@ async function deleteItem() {
         });
 
         if (!response.ok) {
-            throw new Error('Failed to delete item');
+            throw new Error('Failed to move item to trash');
         }
 
         closeDeleteModal();
         loadContent();
     } catch (error) {
-        console.error('Error deleting item:', error);
-        alert('Error deleting item: ' + error.message);
+        console.error('Error moving item to trash:', error);
+        alert('Error moving item to trash: ' + error.message);
     }
 }
 
