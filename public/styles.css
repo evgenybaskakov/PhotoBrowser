@@ -98,13 +98,6 @@ body {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.image-item:hover {
-    /* No translateY — it fights the expanding thumb and reads as a “jump”. */
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
-    z-index: 1;
-    overflow: visible;
-}
-
 .folder-item {
     background: linear-gradient(135deg, #f9f7ff 0%, #f0e7ff 100%);
     position: relative;
@@ -157,26 +150,6 @@ body {
         border-radius var(--thumb-hover-duration) var(--thumb-hover-ease);
 }
 
-/*
- * Hover: same center pivot; only width/height change. Sizes are explicit calcs (not
- * height:auto + aspect-ratio) so both axes interpolate smoothly. object-fit: cover +
- * matching AR shows the full photo; --thumb-magnify scales the bitmap from its center.
- */
-.image-item:hover .image-thumb-frame {
-    z-index: 2;
-    width: calc(100% * var(--thumb-hover-zoom));
-    height: calc((100% * var(--thumb-hover-zoom)) / var(--thumb-ar, 1));
-    border-radius: 8px;
-    box-shadow:
-        0 12px 32px rgba(0, 0, 0, 0.22),
-        0 4px 10px rgba(0, 0, 0, 0.12);
-}
-
-.image-item[data-thumb-orientation="landscape"]:hover .image-thumb-frame {
-    height: calc(100% * var(--thumb-hover-zoom));
-    width: calc((100% * var(--thumb-hover-zoom)) * var(--thumb-ar, 1));
-}
-
 .image-thumb-frame .image-thumbnail {
     width: 100%;
     height: 100%;
@@ -186,10 +159,6 @@ body {
     transform: scale(1);
     transform-origin: center center;
     transition: transform var(--thumb-hover-duration) var(--thumb-hover-ease);
-}
-
-.image-item:hover .image-thumb-frame .image-thumbnail {
-    transform: scale(var(--thumb-magnify));
 }
 
 /* Thumbnail placeholder while the preview loads */
@@ -254,21 +223,6 @@ body {
     margin-top: 0;
 }
 
-.image-item:hover .image-delete-overlay,
-.image-item:focus-within .image-delete-overlay {
-    opacity: 0.8;
-    left: calc(50% + (50% * var(--thumb-hover-zoom)) - 0.5rem);
-    top: calc(50% + ((50% * var(--thumb-hover-zoom)) / var(--thumb-ar, 1)) - 0.5rem);
-    transform: translate(-100%, calc(-100% - 0.5rem));
-    pointer-events: auto;
-}
-
-.image-item[data-thumb-orientation="landscape"]:hover .image-delete-overlay,
-.image-item[data-thumb-orientation="landscape"]:focus-within .image-delete-overlay {
-    left: calc(50% + ((50% * var(--thumb-hover-zoom)) * var(--thumb-ar, 1)) - 0.5rem);
-    top: calc(50% + (50% * var(--thumb-hover-zoom)) - 0.5rem);
-}
-
 /* Don't show delete button while the placeholder overlay is on top */
 .image-item.is-loading .image-delete-overlay {
     opacity: 0 !important;
@@ -277,6 +231,72 @@ body {
 
 .image-delete-overlay .btn {
     flex: 0 0 auto; /* override generic `.btn { flex: 1 }` */
+}
+
+/*
+ * Thumbnail hover magnification + per-item Reveal/Delete — desktop pointer only.
+ * Touch devices keep static thumbs and hide folder/image action overlays.
+ */
+@media (hover: hover) and (pointer: fine) {
+    .image-item:hover {
+        /* No translateY — it fights the expanding thumb and reads as a “jump”. */
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+        z-index: 1;
+        overflow: visible;
+    }
+
+    /*
+     * Hover: same center pivot; only width/height change. Sizes are explicit calcs (not
+     * height:auto + aspect-ratio) so both axes interpolate smoothly. object-fit: cover +
+     * matching AR shows the full photo; --thumb-magnify scales the bitmap from its center.
+     */
+    .image-item:hover .image-thumb-frame {
+        z-index: 2;
+        width: calc(100% * var(--thumb-hover-zoom));
+        height: calc((100% * var(--thumb-hover-zoom)) / var(--thumb-ar, 1));
+        border-radius: 8px;
+        box-shadow:
+            0 12px 32px rgba(0, 0, 0, 0.22),
+            0 4px 10px rgba(0, 0, 0, 0.12);
+    }
+
+    .image-item[data-thumb-orientation="landscape"]:hover .image-thumb-frame {
+        height: calc(100% * var(--thumb-hover-zoom));
+        width: calc((100% * var(--thumb-hover-zoom)) * var(--thumb-ar, 1));
+    }
+
+    .image-item:hover .image-thumb-frame .image-thumbnail {
+        transform: scale(var(--thumb-magnify));
+    }
+
+    .image-item:hover .image-delete-overlay,
+    .image-item:focus-within .image-delete-overlay {
+        opacity: 0.8;
+        left: calc(50% + (50% * var(--thumb-hover-zoom)) - 0.5rem);
+        top: calc(50% + ((50% * var(--thumb-hover-zoom)) / var(--thumb-ar, 1)) - 0.5rem);
+        transform: translate(-100%, calc(-100% - 0.5rem));
+        pointer-events: auto;
+    }
+
+    .image-item[data-thumb-orientation="landscape"]:hover .image-delete-overlay,
+    .image-item[data-thumb-orientation="landscape"]:focus-within .image-delete-overlay {
+        left: calc(50% + ((50% * var(--thumb-hover-zoom)) * var(--thumb-ar, 1)) - 0.5rem);
+        top: calc(50% + (50% * var(--thumb-hover-zoom)) - 0.5rem);
+    }
+
+    .folder-item:hover .folder-delete-overlay,
+    .folder-item:focus-within .folder-delete-overlay {
+        opacity: 0.8;
+        transform: translateY(0);
+        pointer-events: auto;
+    }
+}
+
+@media not ((hover: hover) and (pointer: fine)) {
+    .image-delete-overlay,
+    .folder-delete-overlay {
+        display: none;
+    }
 }
 
 /* Folder delete overlay (only on hover / focus) */
@@ -290,13 +310,6 @@ body {
     transition: opacity 0.15s, transform 0.15s;
     pointer-events: none;
     margin-top: 0;
-}
-
-.folder-item:hover .folder-delete-overlay,
-.folder-item:focus-within .folder-delete-overlay {
-    opacity: 0.8;
-    transform: translateY(0);
-    pointer-events: auto;
 }
 
 .folder-delete-overlay .btn {
