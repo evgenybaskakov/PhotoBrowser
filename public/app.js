@@ -15,6 +15,7 @@ const deleteModal = document.getElementById('deleteModal');
 const confirmDeleteBtn = document.getElementById('confirmDelete');
 const cancelDeleteBtn = document.getElementById('cancelDelete');
 const deleteMessage = document.getElementById('deleteMessage');
+const trashCurrentFolderBtn = document.getElementById('trashCurrentFolderBtn');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -57,6 +58,8 @@ function setupEventListeners() {
         applyPathFromUrl();
         loadContent();
     });
+
+    trashCurrentFolderBtn.addEventListener('click', confirmTrashCurrentFolder);
 }
 
 function onReturnToPhotoBrowser() {
@@ -128,6 +131,7 @@ async function loadContent() {
 
         const data = await response.json();
         updateBreadcrumb();
+        updateFolderToolbar();
         renderFolders(data.folders);
         renderImages(data.images);
     } catch (error) {
@@ -177,6 +181,62 @@ function updateBreadcrumb() {
     }).join(' / ');
 
     breadcrumbPath.innerHTML = buttons ? buttons : '';
+}
+
+function isAtRoot() {
+    if (!currentPath) return true;
+    return pathsEqual(currentPath, rootPath);
+}
+
+function getCurrentFolderRelativePath() {
+    if (isSubpath(rootPath, currentPath)) {
+        return currentPath.slice(rootPath.length).replace(/^\/+/, '');
+    }
+    return String(currentPath).replace(/^\/+/, '');
+}
+
+function getCurrentFolderName() {
+    const pathStr = currentPath || rootPath;
+    const parts = pathStr.split('/').filter(Boolean);
+    return parts.length > 0 ? parts[parts.length - 1] : 'folder';
+}
+
+function getParentPath() {
+    if (isAtRoot()) return rootPath;
+
+    if (isSubpath(rootPath, currentPath)) {
+        const normalized = currentPath.replace(/\/+$/, '');
+        if (pathsEqual(normalized, rootPath)) return rootPath;
+        const lastSlash = normalized.lastIndexOf('/');
+        if (lastSlash <= rootPath.length) return rootPath;
+        return normalized.slice(0, lastSlash);
+    }
+
+    const parts = String(currentPath).split('/').filter(Boolean);
+    parts.pop();
+    return parts.length === 0 ? rootPath : parts.join('/');
+}
+
+function updateFolderToolbar() {
+    const atRoot = isAtRoot();
+    trashCurrentFolderBtn.hidden = atRoot;
+    if (!atRoot) {
+        const folderName = getCurrentFolderName();
+        trashCurrentFolderBtn.title = `Move "${folderName}" to the Trash`;
+    }
+}
+
+function confirmTrashCurrentFolder() {
+    if (isAtRoot()) return;
+
+    const folderName = getCurrentFolderName();
+    itemToDelete = {
+        path: getCurrentFolderRelativePath(),
+        isFolder: true,
+        navigateUpAfter: true
+    };
+    deleteMessage.textContent = `Move the folder "${folderName}" and all its contents to the Trash? You can restore it from your system trash.`;
+    deleteModal.classList.add('show');
 }
 
 function navigateTo(path) {
@@ -384,7 +444,15 @@ async function deleteItem() {
             throw new Error('Failed to move item to trash');
         }
 
+        const navigateUpAfter = itemToDelete.navigateUpAfter;
         closeDeleteModal();
+
+        if (navigateUpAfter) {
+            const parentPath = getParentPath();
+            currentPath = parentPath;
+            history.pushState(null, '', urlForPath(parentPath));
+        }
+
         loadContent();
     } catch (error) {
         console.error('Error moving item to trash:', error);

@@ -28,11 +28,26 @@ body {
     margin-bottom: 1rem;
 }
 
+.header-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
 .breadcrumb {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.95rem;
+    flex: 1;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.header-trash-btn {
+    flex-shrink: 0;
 }
 
 .breadcrumb-btn {
@@ -386,6 +401,15 @@ body.clear-stale-hover .image-item:hover .image-thumb-frame .image-thumbnail {
 
 .btn-danger:hover {
     background-color: #dc2626;
+}
+
+.header-trash-btn.btn-danger {
+    border-radius: 8px;
+    background-color: rgba(220, 38, 38, 0.72);
+}
+
+.header-trash-btn.btn-danger:hover {
+    background-color: rgba(220, 38, 38, 0.88);
 }
 
 .btn-secondary {
