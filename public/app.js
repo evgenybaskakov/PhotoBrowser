@@ -124,11 +124,27 @@ async function loadContent() {
         if (!currentPath) {
             currentPath = rootPath;
         }
-        console.log('Loading content for path:', currentPath);
-        console.log('Loading content for path (encoded):', encodeURIComponent(currentPath));
-        const response = await fetch(`/api/files?dir=${encodeURIComponent(currentPath)}`);
-        if (!response.ok) {
-            throw new Error('Failed to load content');
+        let pathToLoad = currentPath;
+        let response;
+
+        while (true) {
+            response = await fetch(`/api/files?dir=${encodeURIComponent(pathToLoad)}`);
+            if (response.ok) break;
+
+            if (response.status !== 404) {
+                throw new Error('Failed to load content');
+            }
+
+            if (pathsEqual(pathToLoad, rootPath)) {
+                throw new Error('Directory not found');
+            }
+
+            pathToLoad = getParentPath(pathToLoad);
+        }
+
+        if (!pathsEqual(pathToLoad, currentPath)) {
+            currentPath = pathToLoad;
+            history.replaceState(null, '', urlForPath(currentPath));
         }
 
         const data = await response.json();
@@ -203,18 +219,18 @@ function getCurrentFolderName() {
     return parts.length > 0 ? parts[parts.length - 1] : 'folder';
 }
 
-function getParentPath() {
-    if (isAtRoot()) return rootPath;
+function getParentPath(pathStr = currentPath) {
+    if (!pathStr || pathsEqual(pathStr, rootPath)) return rootPath;
 
-    if (isSubpath(rootPath, currentPath)) {
-        const normalized = currentPath.replace(/\/+$/, '');
+    if (isSubpath(rootPath, pathStr)) {
+        const normalized = pathStr.replace(/\/+$/, '');
         if (pathsEqual(normalized, rootPath)) return rootPath;
         const lastSlash = normalized.lastIndexOf('/');
         if (lastSlash <= rootPath.length) return rootPath;
         return normalized.slice(0, lastSlash);
     }
 
-    const parts = String(currentPath).split('/').filter(Boolean);
+    const parts = String(pathStr).split('/').filter(Boolean);
     parts.pop();
     return parts.length === 0 ? rootPath : parts.join('/');
 }
