@@ -407,20 +407,19 @@ app.post('/api/reveal', (req, res) => {
     let args = [];
 
     if (platform === 'darwin') {
-      if (isDirectory) {
-        command = 'open';
-        args = [fullPath];
-      } else {
-        command = 'open';
-        args = ['-R', fullPath];
-      }
+      // -R reveals the item in its parent (selected for folders, not opened)
+      command = 'open';
+      args = ['-R', fullPath];
     } else if (platform === 'win32') {
       command = 'explorer';
-      args = isDirectory ? [fullPath] : ['/select,', fullPath];
+      args = [`/select,${fullPath}`];
+    } else if (isDirectory) {
+      // GNOME Files: select folder in parent; fallback opens parent only
+      command = 'nautilus';
+      args = ['--select', fullPath];
     } else {
-      // Linux fallback: open containing directory for files
       command = 'xdg-open';
-      args = [isDirectory ? fullPath : path.dirname(fullPath)];
+      args = [path.dirname(fullPath)];
     }
 
     execFile(command, args, (error) => {
