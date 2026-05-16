@@ -46,7 +46,10 @@ body {
     flex-wrap: wrap;
 }
 
-.header-trash-btn {
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     flex-shrink: 0;
 }
 
@@ -401,6 +404,15 @@ body.clear-stale-hover .image-item:hover .image-thumb-frame .image-thumbnail {
 
 .btn-danger:hover {
     background-color: #dc2626;
+}
+
+.header-reveal-btn.btn-secondary {
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.22);
+}
+
+.header-reveal-btn.btn-secondary:hover {
+    background-color: rgba(255, 255, 255, 0.34);
 }
 
 .header-trash-btn.btn-danger {

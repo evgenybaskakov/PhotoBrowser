@@ -15,6 +15,7 @@ const deleteModal = document.getElementById('deleteModal');
 const confirmDeleteBtn = document.getElementById('confirmDelete');
 const cancelDeleteBtn = document.getElementById('cancelDelete');
 const deleteMessage = document.getElementById('deleteMessage');
+const revealCurrentFolderBtn = document.getElementById('revealCurrentFolderBtn');
 const trashCurrentFolderBtn = document.getElementById('trashCurrentFolderBtn');
 
 // Initialize
@@ -59,6 +60,7 @@ function setupEventListeners() {
         loadContent();
     });
 
+    revealCurrentFolderBtn.addEventListener('click', revealCurrentFolder);
     trashCurrentFolderBtn.addEventListener('click', confirmTrashCurrentFolder);
 }
 
@@ -219,11 +221,18 @@ function getParentPath() {
 
 function updateFolderToolbar() {
     const atRoot = isAtRoot();
+    revealCurrentFolderBtn.hidden = atRoot;
     trashCurrentFolderBtn.hidden = atRoot;
     if (!atRoot) {
         const folderName = getCurrentFolderName();
+        revealCurrentFolderBtn.title = `Reveal "${folderName}" in file manager`;
         trashCurrentFolderBtn.title = `Move "${folderName}" to the Trash`;
     }
+}
+
+function revealCurrentFolder() {
+    if (isAtRoot()) return;
+    revealInFileManager(getCurrentFolderRelativePath(), true);
 }
 
 function confirmTrashCurrentFolder() {
