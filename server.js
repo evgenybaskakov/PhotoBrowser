@@ -128,6 +128,97 @@ app.get('/api/files', (req, res) => {
   }
 });
 
+const SEARCH_MAX_RESULTS = 500;
+
+/** Lowercase and replace non-alphanumeric runs with spaces for word matching. */
+function normalizeForSearch(text) {
+  return String(text).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/** Split a user query into words, ignoring special symbols. */
+function queryToWords(query) {
+  return normalizeForSearch(query).split(/\s+/).filter(Boolean);
+}
+
+/** True when every word appears in the normalized item name. */
+function nameMatchesAllWords(name, words) {
+  if (words.length === 0) return false;
+  const normalizedName = normalizeForSearch(name);
+  return words.every((word) => normalizedName.includes(word));
+}
+
+function walkAndSearch(photoDir, dirPath, words, folders, limit) {
+  if (folders.length >= limit) return;
+
+  let entries;
+  try {
+    entries = fs.readdirSync(dirPath);
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (folders.length >= limit) break;
+
+    const itemPath = path.join(dirPath, entry);
+    let stats;
+    try {
+      stats = fs.statSync(itemPath);
+    } catch {
+      continue;
+    }
+
+    if (!stats.isDirectory()) continue;
+
+    const relativePath = path.relative(photoDir, itemPath);
+
+    if (nameMatchesAllWords(entry, words)) {
+      folders.push({
+        name: entry,
+        path: relativePath,
+        isDirectory: true
+      });
+    }
+    walkAndSearch(photoDir, itemPath, words, folders, limit);
+  }
+}
+
+/**
+ * Search folders by name (all words must match).
+ * GET /api/search?q=vacation+2024
+ */
+app.get('/api/search', (req, res) => {
+  try {
+    const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const words = queryToWords(query);
+
+    if (words.length === 0) {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+
+    const photoDir = getResolvedPhotoDir();
+    if (!photoDir || !fs.existsSync(photoDir)) {
+      return res.status(500).json({ error: 'Photo directory not available' });
+    }
+
+    const folders = [];
+    walkAndSearch(photoDir, photoDir, words, folders, SEARCH_MAX_RESULTS);
+
+    folders.sort((a, b) => a.name.localeCompare(b.name));
+
+    const truncated = folders.length >= SEARCH_MAX_RESULTS;
+
+    res.json({
+      query,
+      folders,
+      truncated
+    });
+  } catch (error) {
+    console.error('Error searching:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 /**
  * Get image file
  * GET /api/image?path=/path/to/image.jpg

@@ -2,6 +2,7 @@
 let rootPath = '';
 
 let currentPath = null;
+let currentSearchQuery = null;
 let itemToDelete = null;
 let pendingThumbnailRefreshPath = null;
 let staleHoverCleanup = null;
@@ -17,11 +18,16 @@ const cancelDeleteBtn = document.getElementById('cancelDelete');
 const deleteMessage = document.getElementById('deleteMessage');
 const revealCurrentFolderBtn = document.getElementById('revealCurrentFolderBtn');
 const trashCurrentFolderBtn = document.getElementById('trashCurrentFolderBtn');
+const searchForm = document.getElementById('searchForm');
+const searchInput = document.getElementById('searchInput');
+const clearSearchBtn = document.getElementById('clearSearchBtn');
+const mainContent = document.getElementById('mainContent');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     await fetchRootPathFromServer();
-    applyPathFromUrl();
+    applyStateFromUrl();
+    syncSearchUiFromState();
     loadContent();
     setupEventListeners();
 });
@@ -56,9 +62,17 @@ function setupEventListeners() {
     window.addEventListener('focus', onReturnToPhotoBrowser);
 
     window.addEventListener('popstate', () => {
-        applyPathFromUrl();
+        applyStateFromUrl();
+        syncSearchUiFromState();
         loadContent();
     });
+
+    searchForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        performSearch(searchInput.value);
+    });
+
+    clearSearchBtn.addEventListener('click', clearSearch);
 
     revealCurrentFolderBtn.addEventListener('click', revealCurrentFolder);
     trashCurrentFolderBtn.addEventListener('click', confirmTrashCurrentFolder);
@@ -118,45 +132,111 @@ function clearStaleHoverOverlays() {
 
 async function loadContent() {
     foldersList.innerHTML = '<div class="loading">Loading folders...</div>';
-    imagesList.innerHTML = '<div class="loading">Loading images...</div>';
+    if (!currentSearchQuery) {
+        imagesList.innerHTML = '<div class="loading">Loading images...</div>';
+    }
 
     try {
-        if (!currentPath) {
-            currentPath = rootPath;
-        }
-        let pathToLoad = currentPath;
-        let response;
-
-        while (true) {
-            response = await fetch(`/api/files?dir=${encodeURIComponent(pathToLoad)}`);
-            if (response.ok) break;
-
-            if (response.status !== 404) {
-                throw new Error('Failed to load content');
-            }
-
-            if (pathsEqual(pathToLoad, rootPath)) {
-                throw new Error('Directory not found');
-            }
-
-            pathToLoad = getParentPath(pathToLoad);
+        if (currentSearchQuery) {
+            await loadSearchContent();
+            return;
         }
 
-        if (!pathsEqual(pathToLoad, currentPath)) {
-            currentPath = pathToLoad;
-            history.replaceState(null, '', urlForPath(currentPath));
-        }
-
-        const data = await response.json();
-        updateBreadcrumb();
-        updateFolderToolbar();
-        renderFolders(data.folders);
-        renderImages(data.images);
+        await loadFolderContent();
     } catch (error) {
         console.error('Error loading content:', error);
         foldersList.innerHTML = '<div class="empty-message">Error loading folders</div>';
         imagesList.innerHTML = '<div class="empty-message">Error loading images</div>';
+        updateSearchResultsUi(false);
     }
+}
+
+async function loadFolderContent() {
+    if (!currentPath) {
+        currentPath = rootPath;
+    }
+    let pathToLoad = currentPath;
+    let response;
+
+    while (true) {
+        response = await fetch(`/api/files?dir=${encodeURIComponent(pathToLoad)}`);
+        if (response.ok) break;
+
+        if (response.status !== 404) {
+            throw new Error('Failed to load content');
+        }
+
+        if (pathsEqual(pathToLoad, rootPath)) {
+            throw new Error('Directory not found');
+        }
+
+        pathToLoad = getParentPath(pathToLoad);
+    }
+
+    if (!pathsEqual(pathToLoad, currentPath)) {
+        currentPath = pathToLoad;
+        history.replaceState(null, '', urlForState({ path: currentPath }));
+    }
+
+    const data = await response.json();
+    updateSearchResultsUi(false);
+    updateBreadcrumb();
+    updateFolderToolbar();
+    renderFolders(data.folders);
+    renderImages(data.images);
+}
+
+async function loadSearchContent() {
+    const response = await fetch(`/api/search?q=${encodeURIComponent(currentSearchQuery)}`);
+    if (!response.ok) {
+        throw new Error('Search failed');
+    }
+
+    const data = await response.json();
+    updateSearchResultsUi(true);
+    updateBreadcrumb();
+    updateFolderToolbar();
+    renderFolders(data.folders);
+
+    const imagesSection = document.querySelector('.images-section');
+    if (imagesSection) imagesSection.style.display = 'none';
+
+    if (data.folders.length === 0) {
+        const foldersSection = document.querySelector('.folders-section');
+        if (foldersSection) foldersSection.style.display = 'block';
+        foldersList.innerHTML = '<div class="empty-message">No matching folders</div>';
+    }
+}
+
+function performSearch(query) {
+    const trimmed = String(query).trim();
+    if (!trimmed) return;
+
+    currentSearchQuery = trimmed;
+    syncSearchUiFromState();
+    history.pushState(null, '', urlForState({ search: trimmed }));
+    loadContent();
+}
+
+function clearSearch() {
+    currentSearchQuery = null;
+    syncSearchUiFromState();
+
+    if (!currentPath) {
+        currentPath = rootPath;
+    }
+
+    history.pushState(null, '', urlForState({ path: currentPath }));
+    loadContent();
+}
+
+function syncSearchUiFromState() {
+    searchInput.value = currentSearchQuery || '';
+    clearSearchBtn.hidden = !currentSearchQuery;
+}
+
+function updateSearchResultsUi(isSearch) {
+    mainContent.classList.toggle('is-search-results', isSearch);
 }
 
 function isSubpath(prefix, path) {
@@ -176,20 +256,43 @@ function pathsEqual(a, b) {
     return na === nb;
 }
 
-function urlForPath(p) {
+function urlForState({ path, search } = {}) {
     const pathname = window.location.pathname || '/';
-    if (pathsEqual(p, rootPath)) {
-        return pathname;
+    const params = new URLSearchParams();
+
+    if (search) {
+        params.set('search', search);
+    } else if (path && !pathsEqual(path, rootPath)) {
+        params.set('dir', path);
     }
-    return `${pathname}?dir=${encodeURIComponent(p)}`;
+
+    const qs = params.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
 }
 
-function applyPathFromUrl() {
-    const dir = new URLSearchParams(window.location.search).get('dir');
+function urlForPath(p) {
+    return urlForState({ path: p });
+}
+
+function applyStateFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const search = params.get('search');
+    const dir = params.get('dir');
+
+    currentSearchQuery = search || null;
     currentPath = dir ? dir : null;
 }
 
 function updateBreadcrumb() {
+    if (currentSearchQuery) {
+        const rootLabel = rootPath.split('/').filter(Boolean).pop() || 'Home';
+        breadcrumbPath.innerHTML = `
+            <button class="breadcrumb-btn" onclick="clearSearch()">${escapeHtml(rootLabel)}</button>
+            <span class="breadcrumb-search-label"> / Search results: "${escapeHtml(currentSearchQuery)}"</span>
+        `;
+        return;
+    }
+
     const currentPathWithoutRoot = isSubpath(rootPath, currentPath) ?
         currentPath.slice(rootPath.length) : currentPath;
     const parts = [rootPath, ...currentPathWithoutRoot.split("/").filter(p => p)];
@@ -236,6 +339,12 @@ function getParentPath(pathStr = currentPath) {
 }
 
 function updateFolderToolbar() {
+    if (currentSearchQuery) {
+        revealCurrentFolderBtn.hidden = true;
+        trashCurrentFolderBtn.hidden = true;
+        return;
+    }
+
     const atRoot = isAtRoot();
     revealCurrentFolderBtn.hidden = atRoot;
     trashCurrentFolderBtn.hidden = atRoot;
@@ -267,6 +376,8 @@ function confirmTrashCurrentFolder() {
 function navigateTo(path) {
     console.log('Navigating to:', path);
     currentPath = path;
+    currentSearchQuery = null;
+    syncSearchUiFromState();
     history.pushState(null, '', urlForPath(path));
     loadContent();
 }
@@ -475,6 +586,8 @@ async function deleteItem() {
         if (navigateUpAfter) {
             const parentPath = getParentPath();
             currentPath = parentPath;
+            currentSearchQuery = null;
+            syncSearchUiFromState();
             history.pushState(null, '', urlForPath(parentPath));
         }
 

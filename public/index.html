@@ -10,7 +10,14 @@
     <div class="container">
         <!-- Header -->
         <header class="header">
-            <h1>Photo Browser</h1>
+            <div class="header-top">
+                <h1>Photo Browser</h1>
+                <form class="header-search" id="searchForm" role="search">
+                    <input type="search" id="searchInput" class="search-input" placeholder="Search folders…" autocomplete="off" enterkeyhint="search">
+                    <button type="submit" id="searchBtn" class="btn-primary btn-small search-btn">Search</button>
+                    <button type="button" id="clearSearchBtn" class="btn-secondary btn-small search-clear-btn" hidden>Clear</button>
+                </form>
+            </div>
             <div class="header-toolbar">
                 <div class="breadcrumb">
                     <span id="breadcrumbPath"></span>
@@ -23,7 +30,7 @@
         </header>
 
         <!-- Main Content Area -->
-        <main class="main-content">
+        <main class="main-content" id="mainContent">
             <!-- Folders Section -->
             <section class="folders-section">
                 <div id="foldersList" class="items-grid">
