@@ -5,6 +5,9 @@ let currentPath = null;
 let currentSearchQuery = null;
 let itemToDelete = null;
 let pendingThumbnailRefreshPath = null;
+
+/** Longest edge for /api/thumbnail (~2× grid cell at 2× DPR, with hover zoom). */
+const THUMBNAIL_API_SIZE = 512;
 let staleHoverCleanup = null;
 let staleHoverTimeoutId = null;
 
@@ -425,7 +428,7 @@ function renderImages(images) {
             <div class="image-item is-loading" tabindex="0">
                 <div class="image-thumb-frame">
                     <img class="image-thumbnail"
-                        src="/api/thumbnail?path=${encodeURIComponent(image.path)}&size=320&fit=inside"
+                        src="/api/thumbnail?path=${encodeURIComponent(image.path)}&size=${THUMBNAIL_API_SIZE}&fit=inside"
                         data-image-path="${escapeHtml(image.path)}"
                         alt="${escapeHtml(image.name)}"
                         onclick="openImageInNewTab('${escapeForInlineHandlerArg(image.path)}')"

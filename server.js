@@ -288,7 +288,7 @@ app.get('/api/thumbnail', async (req, res) => {
     const pipeline = sharp(fullPath, { limitInputPixels: false })
       .rotate()
       .resize(size, size, { fit: 'inside' })
-      .jpeg({ quality: 72, mozjpeg: true });
+      .jpeg({ quality: 80, mozjpeg: true });
 
     const buf = await pipeline.toBuffer();
     const value = { buf, contentType: 'image/jpeg', mtimeMs: stat.mtimeMs, size };
