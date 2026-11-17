@@ -40,6 +40,38 @@ app.get('/api/config', (req, res) => {
 // Image extensions
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
 
+function isImageFileName(name) {
+  return IMAGE_EXTENSIONS.includes(path.extname(name).toLowerCase());
+}
+
+/** True when the filename contains the word "cover". */
+function isCoverImageName(name) {
+  if (!isImageFileName(name)) return false;
+  return /(?:^|[^a-z0-9])cover(?:[^a-z0-9]|$)/i.test(name);
+}
+
+/**
+ * Relative path of a cover image inside `folderFullPath`, if one exists.
+ * Prefers a stable alphabetical choice when several match.
+ */
+function findCoverImage(folderFullPath, photoDir) {
+  let entries;
+  try {
+    entries = fs.readdirSync(folderFullPath, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+
+  const covers = entries.filter((entry) => {
+    if (entry.isDirectory()) return false;
+    return isCoverImageName(entry.name);
+  });
+
+  if (covers.length === 0) return undefined;
+  covers.sort((a, b) => a.name.localeCompare(b.name));
+  return path.relative(photoDir, path.join(folderFullPath, covers[0].name));
+}
+
 // Simple in-memory thumbnail cache (bounded).
 const THUMB_CACHE_MAX_ITEMS = 300;
 /** @type {Map<string, {buf: Buffer, contentType: string, mtimeMs: number, size: number}>} */
@@ -98,12 +130,15 @@ app.get('/api/files', (req, res) => {
       const relativePath = path.relative(photoDir, itemPath);
 
       if (itemStats.isDirectory()) {
-        folders.push({
+        const folder = {
           name: item,
           path: relativePath,
           isDirectory: true
-        });
-      } else if (IMAGE_EXTENSIONS.includes(path.extname(item).toLowerCase())) {
+        };
+        const coverImage = findCoverImage(itemPath, photoDir);
+        if (coverImage) folder.coverImage = coverImage;
+        folders.push(folder);
+      } else if (isImageFileName(item)) {
         images.push({
           name: item,
           path: relativePath,
@@ -173,11 +208,14 @@ function walkAndSearch(photoDir, dirPath, words, folders, limit) {
     const relativePath = path.relative(photoDir, itemPath);
 
     if (nameMatchesAllWords(entry, words)) {
-      folders.push({
+      const folder = {
         name: entry,
         path: relativePath,
         isDirectory: true
-      });
+      };
+      const coverImage = findCoverImage(itemPath, photoDir);
+      if (coverImage) folder.coverImage = coverImage;
+      folders.push(folder);
     }
     walkAndSearch(photoDir, itemPath, words, folders, limit);
   }

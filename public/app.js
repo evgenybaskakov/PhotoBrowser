@@ -398,16 +398,46 @@ function renderFolders(folders) {
             foldersSection.style.display = 'block';
         }
 
-        foldersList.innerHTML = folders.map(folder => `
-            <div class="folder-item" tabindex="0" onclick="navigateTo('${escapeForInlineHandlerArg(folder.path)}')">
-                <div class="icon">📁</div>
-                <div class="name" title="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</div>
+        foldersList.innerHTML = folders.map(folder => {
+            const hasCover = Boolean(folder.coverImage);
+            const actionsHtml = `
                 <div class="folder-delete-overlay item-actions">
                     <button class="btn btn-secondary btn-small" onclick="event.stopPropagation(); revealInFileManager('${escapeForInlineHandlerArg(folder.path)}', true)">Reveal</button>
                     <button class="btn btn-danger btn-small" onclick="event.stopPropagation(); confirmDeleteFolder('${escapeForInlineHandlerArg(folder.path)}', '${escapeForInlineHandlerArg(folder.name)}')">Trash</button>
-                </div>
+                </div>`;
+            const iconHtml = hasCover
+                ? `<div class="folder-cover-slot">
+                        <div class="folder-cover-frame">
+                            <img class="folder-cover"
+                                src="/api/thumbnail?path=${encodeURIComponent(folder.coverImage)}&size=${THUMBNAIL_API_SIZE}&fit=inside"
+                                alt=""
+                                draggable="false"
+                                loading="lazy"
+                                decoding="async"
+                                onload="handleFolderCoverLoad(this)"
+                                onerror="handleFolderCoverError(this)">
+                        </div>
+                        ${actionsHtml}
+                    </div>`
+                : `<div class="icon">📁</div>`;
+
+            return `
+            <div class="folder-item${hasCover ? ' has-cover' : ''}" tabindex="0" onclick="navigateTo('${escapeForInlineHandlerArg(folder.path)}')">
+                ${iconHtml}
+                <div class="name" title="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</div>
+                ${hasCover ? '' : actionsHtml}
             </div>
-        `).join('');
+        `;
+        }).join('');
+
+        requestAnimationFrame(() => {
+            const covers = foldersList.querySelectorAll('.folder-cover');
+            covers.forEach((img) => {
+                if (img.complete && img.naturalWidth > 0) {
+                    handleFolderCoverLoad(img);
+                }
+            });
+        });
     }
 }
 
@@ -467,6 +497,20 @@ function handleThumbnailLoad(imgEl) {
     const container = imgEl?.closest?.('.image-item');
     if (!container) return;
 
+    applyThumbAspect(container, imgEl);
+
+    // Keep placeholder visible until decoding is done to avoid white flashes.
+    const finish = () => container.classList.remove('is-loading');
+    if (typeof imgEl.decode === 'function') {
+        imgEl.decode().then(finish).catch(finish);
+    } else {
+        finish();
+    }
+}
+
+function applyThumbAspect(container, imgEl) {
+    if (!container || !imgEl) return;
+
     const w = imgEl.naturalWidth;
     const h = imgEl.naturalHeight;
     if (w > 0 && h > 0) {
@@ -479,13 +523,31 @@ function handleThumbnailLoad(imgEl) {
             container.dataset.thumbOrientation = 'square';
         }
     }
+}
 
-    // Keep placeholder visible until decoding is done to avoid white flashes.
-    const finish = () => container.classList.remove('is-loading');
-    if (typeof imgEl.decode === 'function') {
-        imgEl.decode().then(finish).catch(finish);
+function handleFolderCoverLoad(imgEl) {
+    const container = imgEl?.closest?.('.folder-item');
+    applyThumbAspect(container, imgEl);
+}
+
+function handleFolderCoverError(imgEl) {
+    const folderItem = imgEl?.closest?.('.folder-item');
+    const slot = imgEl?.closest?.('.folder-cover-slot');
+    const overlay = slot?.querySelector?.('.folder-delete-overlay');
+    const icon = document.createElement('div');
+    icon.className = 'icon';
+    icon.textContent = '📁';
+    if (slot) {
+        // Keep actions on the folder card after falling back to the emoji icon.
+        if (overlay && folderItem) folderItem.appendChild(overlay);
+        slot.replaceWith(icon);
     } else {
-        finish();
+        imgEl.replaceWith(icon);
+    }
+    if (folderItem) {
+        folderItem.classList.remove('has-cover');
+        folderItem.style.removeProperty('--thumb-ar');
+        delete folderItem.dataset.thumbOrientation;
     }
 }
 

@@ -184,6 +184,64 @@ body {
     margin-bottom: 0.5rem;
 }
 
+.folder-item.has-cover {
+    --thumb-hover-zoom: 1.1;
+    --thumb-hover-ease: cubic-bezier(0.32, 0.72, 0, 1);
+    --thumb-hover-duration: 0.38s;
+    padding: 0;
+    align-items: stretch;
+}
+
+.folder-cover-slot {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    overflow: hidden;
+    background: #ddd8ec;
+}
+
+.folder-cover-frame {
+    position: absolute;
+    z-index: 0;
+    left: 50%;
+    top: 50%;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #ddd8ec;
+    transform: translate(-50%, -50%);
+    transition:
+        width var(--thumb-hover-duration) var(--thumb-hover-ease),
+        height var(--thumb-hover-duration) var(--thumb-hover-ease),
+        box-shadow var(--thumb-hover-duration) var(--thumb-hover-ease),
+        border-radius var(--thumb-hover-duration) var(--thumb-hover-ease);
+}
+
+.folder-cover-frame .folder-cover {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+    display: block;
+}
+
+.folder-item.has-cover .name {
+    position: relative;
+    z-index: 1;
+    padding: 0.7rem 0.75rem 0.85rem;
+    background: linear-gradient(135deg, #f9f7ff 0%, #f0e7ff 100%);
+}
+
+/* Cover folders: pin actions to the thumbnail lower-right, like image thumbs. */
+.folder-item.has-cover .folder-delete-overlay {
+    bottom: auto;
+    right: auto;
+    left: calc(100% - 0.5rem);
+    top: calc(100% - 0.5rem);
+    z-index: 3;
+    transform: translate(-100%, calc(-100% - 0.5rem));
+}
+
 .folder-item .name {
     font-weight: 500;
     word-break: break-word;
@@ -280,15 +338,15 @@ body {
     overflow: hidden;
 }
 
-/* Delete overlay (only on hover / focus) */
+/* Delete overlay (only on hover / focus) — fade only; position snaps with the thumb. */
 .image-delete-overlay {
     position: absolute;
     left: calc(100% - 0.5rem);
     top: calc(100% - 0.5rem);
     z-index: 3;
     opacity: 0;
-    transform: translateY(-4px);
-    transition: opacity 0.15s, transform 0.15s, left 0.2s ease, top 0.2s ease;
+    transform: translate(-100%, calc(-100% - 0.5rem));
+    transition: opacity 0.15s;
     pointer-events: none;
     margin-top: 0;
 }
@@ -344,7 +402,6 @@ body {
         opacity: 0.8;
         left: calc(50% + (50% * var(--thumb-hover-zoom)) - 0.5rem);
         top: calc(50% + ((50% * var(--thumb-hover-zoom)) / var(--thumb-ar, 1)) - 0.5rem);
-        transform: translate(-100%, calc(-100% - 0.5rem));
         pointer-events: auto;
     }
 
@@ -357,8 +414,50 @@ body {
     .folder-item:hover .folder-delete-overlay,
     .folder-item:focus-within .folder-delete-overlay {
         opacity: 0.8;
-        transform: translateY(0);
         pointer-events: auto;
+    }
+
+    .folder-item.has-cover:hover {
+        /* Match image thumbs: no translateY; expand cover frame instead. */
+        transform: none;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+        z-index: 1;
+        overflow: visible;
+    }
+
+    .folder-item.has-cover:hover .folder-cover-slot,
+    .folder-item.has-cover:focus-within .folder-cover-slot {
+        overflow: visible;
+        z-index: 2;
+    }
+
+    .folder-item.has-cover:hover .folder-cover-frame {
+        z-index: 2;
+        width: calc(100% * var(--thumb-hover-zoom));
+        height: calc((100% * var(--thumb-hover-zoom)) / var(--thumb-ar, 1));
+        border-radius: 8px;
+        box-shadow:
+            0 12px 32px rgba(0, 0, 0, 0.22),
+            0 4px 10px rgba(0, 0, 0, 0.12);
+    }
+
+    .folder-item.has-cover[data-thumb-orientation="landscape"]:hover .folder-cover-frame {
+        height: calc(100% * var(--thumb-hover-zoom));
+        width: calc((100% * var(--thumb-hover-zoom)) * var(--thumb-ar, 1));
+    }
+
+    .folder-item.has-cover:hover .folder-delete-overlay,
+    .folder-item.has-cover:focus-within .folder-delete-overlay {
+        left: calc(50% + (50% * var(--thumb-hover-zoom)) - 0.5rem);
+        top: calc(50% + ((50% * var(--thumb-hover-zoom)) / var(--thumb-ar, 1)) - 0.5rem);
+        transform: translate(-100%, calc(-100% - 0.5rem));
+        pointer-events: auto;
+    }
+
+    .folder-item.has-cover[data-thumb-orientation="landscape"]:hover .folder-delete-overlay,
+    .folder-item.has-cover[data-thumb-orientation="landscape"]:focus-within .folder-delete-overlay {
+        left: calc(50% + ((50% * var(--thumb-hover-zoom)) * var(--thumb-ar, 1)) - 0.5rem);
+        top: calc(50% + (50% * var(--thumb-hover-zoom)) - 0.5rem);
     }
 }
 
@@ -369,15 +468,14 @@ body {
     }
 }
 
-/* Folder delete overlay (only on hover / focus) */
+/* Folder delete overlay (only on hover / focus) — fade only. */
 .folder-delete-overlay {
     position: absolute;
     bottom: 0.5rem;
     right: 0.5rem;
     z-index: 2;
     opacity: 0;
-    transform: translateY(-4px);
-    transition: opacity 0.15s, transform 0.15s;
+    transition: opacity 0.15s;
     pointer-events: none;
     margin-top: 0;
 }
@@ -393,7 +491,6 @@ body {
 body.clear-stale-hover .image-delete-overlay,
 body.clear-stale-hover .folder-delete-overlay {
     opacity: 0 !important;
-    transform: translateY(-4px) !important;
     pointer-events: none !important;
 }
 
@@ -403,11 +500,13 @@ body.clear-stale-hover .folder-item:hover {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
 }
 
-body.clear-stale-hover .image-item:hover {
+body.clear-stale-hover .image-item:hover,
+body.clear-stale-hover .folder-item.has-cover:hover {
     overflow: hidden !important;
 }
 
-body.clear-stale-hover .image-item:hover .image-thumb-frame {
+body.clear-stale-hover .image-item:hover .image-thumb-frame,
+body.clear-stale-hover .folder-item.has-cover:hover .folder-cover-frame {
     left: 50% !important;
     top: 50% !important;
     transform: translate(-50%, -50%) !important;
@@ -416,6 +515,11 @@ body.clear-stale-hover .image-item:hover .image-thumb-frame {
     z-index: 0 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
+}
+
+body.clear-stale-hover .folder-item.has-cover:hover .folder-cover-slot {
+    overflow: hidden !important;
+    z-index: 0 !important;
 }
 
 body.clear-stale-hover .image-item:hover .image-thumb-frame .image-thumbnail {
