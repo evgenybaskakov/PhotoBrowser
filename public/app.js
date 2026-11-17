@@ -201,6 +201,9 @@ async function loadSearchContent() {
     updateFolderToolbar();
     renderFolders(data.folders);
 
+    // Search never shows images; clear so hidden thumbnails do not keep loading,
+    // and so folder view can restore via renderImages without leftover grid state.
+    imagesList.innerHTML = '';
     const imagesSection = document.querySelector('.images-section');
     if (imagesSection) imagesSection.style.display = 'none';
 
@@ -389,6 +392,7 @@ function renderFolders(folders) {
     const foldersSection = document.querySelector('.folders-section');
 
     if (folders.length === 0) {
+        foldersList.innerHTML = '';
         if (foldersSection) {
             foldersSection.style.display = 'none';
         }
@@ -445,6 +449,7 @@ function renderImages(images) {
     const imagesSection = document.querySelector('.images-section');
 
     if (images.length === 0) {
+        imagesList.innerHTML = '';
         if (imagesSection) {
             imagesSection.style.display = 'none';
         }

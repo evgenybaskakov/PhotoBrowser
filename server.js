@@ -29,12 +29,23 @@ function getPhotoDir() {
   return process.env.PHOTO_DIR || process.env.HOME;
 }
 
+/** Resolved browsing root for path security checks. */
+function getResolvedPhotoDir() {
+  return path.resolve(getPhotoDir() || '');
+}
+
+/** True when `targetPath` is the photo root or a path inside it. */
+function isPathInsidePhotoDir(targetPath, photoDir) {
+  if (targetPath === photoDir) return true;
+  return targetPath.startsWith(photoDir + path.sep);
+}
+
 app.get('/api/config', (req, res) => {
   const root = getPhotoDir();
   if (!root) {
     return res.status(500).json({ error: 'Set PHOTO_DIR or HOME environment variable' });
   }
-  res.json({ rootPath: path.normalize(root) });
+  res.json({ rootPath: getResolvedPhotoDir() });
 });
 
 // Image extensions
@@ -50,15 +61,57 @@ function isCoverImageName(name) {
   return /(?:^|[^a-z0-9])cover(?:[^a-z0-9]|$)/i.test(name);
 }
 
+const COVER_CACHE_MAX_ITEMS = 500;
+/** @type {Map<string, {mtimeMs: number, coverImage: string|undefined}>} */
+const coverCache = new Map();
+
+function coverCacheGet(folderFullPath, mtimeMs) {
+  const cached = coverCache.get(folderFullPath);
+  if (!cached || cached.mtimeMs !== mtimeMs) return null;
+  // refresh LRU order
+  coverCache.delete(folderFullPath);
+  coverCache.set(folderFullPath, cached);
+  return cached;
+}
+
+function coverCacheSet(folderFullPath, value) {
+  if (coverCache.has(folderFullPath)) coverCache.delete(folderFullPath);
+  coverCache.set(folderFullPath, value);
+  while (coverCache.size > COVER_CACHE_MAX_ITEMS) {
+    const oldestKey = coverCache.keys().next().value;
+    coverCache.delete(oldestKey);
+  }
+}
+
+function clearCoverCacheForPath(fullPath) {
+  for (const key of coverCache.keys()) {
+    if (key === fullPath || key.startsWith(`${fullPath}${path.sep}`)) {
+      coverCache.delete(key);
+    }
+  }
+}
+
 /**
  * Relative path of a cover image inside `folderFullPath`, if one exists.
  * Prefers a stable alphabetical choice when several match.
+ * Async so listing/search do not block the event loop on each subfolder.
  */
-function findCoverImage(folderFullPath, photoDir) {
+async function findCoverImage(folderFullPath, photoDir) {
+  let stats;
+  try {
+    stats = await fs.promises.stat(folderFullPath);
+  } catch {
+    return undefined;
+  }
+
+  const cached = coverCacheGet(folderFullPath, stats.mtimeMs);
+  if (cached) return cached.coverImage;
+
   let entries;
   try {
-    entries = fs.readdirSync(folderFullPath, { withFileTypes: true });
+    entries = await fs.promises.readdir(folderFullPath, { withFileTypes: true });
   } catch {
+    coverCacheSet(folderFullPath, { mtimeMs: stats.mtimeMs, coverImage: undefined });
     return undefined;
   }
 
@@ -67,9 +120,16 @@ function findCoverImage(folderFullPath, photoDir) {
     return isCoverImageName(entry.name);
   });
 
-  if (covers.length === 0) return undefined;
-  covers.sort((a, b) => a.name.localeCompare(b.name));
-  return path.relative(photoDir, path.join(folderFullPath, covers[0].name));
+  let coverImage;
+  if (covers.length === 0) {
+    coverImage = undefined;
+  } else {
+    covers.sort((a, b) => a.name.localeCompare(b.name));
+    coverImage = path.relative(photoDir, path.join(folderFullPath, covers[0].name));
+  }
+
+  coverCacheSet(folderFullPath, { mtimeMs: stats.mtimeMs, coverImage });
+  return coverImage;
 }
 
 // Simple in-memory thumbnail cache (bounded).
@@ -99,45 +159,48 @@ function cacheSet(key, value) {
  * Get directory structure and images
  * GET /api/files?dir=/path/to/directory
  */
-app.get('/api/files', (req, res) => {
+app.get('/api/files', async (req, res) => {
   try {
     let dirPath = req.query.dir || '/';
-    
+
     // Security: prevent directory traversal attacks
-    const photoDir = getPhotoDir();
+    const photoDir = getResolvedPhotoDir();
+    if (!photoDir || !(await fs.promises.stat(photoDir).then((s) => s.isDirectory()).catch(() => false))) {
+      return res.status(500).json({ error: 'Photo directory not available' });
+    }
+
     const fullPath = path.resolve(photoDir, dirPath);
-    
-    if (!fullPath.startsWith(photoDir)) {
+
+    if (!isPathInsidePhotoDir(fullPath, photoDir)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    if (!fs.existsSync(fullPath)) {
+    let stats;
+    try {
+      stats = await fs.promises.stat(fullPath);
+    } catch {
       return res.status(404).json({ error: 'Directory not found' });
     }
-
-    const stats = fs.statSync(fullPath);
     if (!stats.isDirectory()) {
       return res.status(400).json({ error: 'Not a directory' });
     }
 
-    const items = fs.readdirSync(fullPath);
-    const folders = [];
+    const items = await fs.promises.readdir(fullPath);
+    const folderCandidates = [];
     const images = [];
 
-    items.forEach(item => {
+    await Promise.all(items.map(async (item) => {
       const itemPath = path.join(fullPath, item);
-      const itemStats = fs.statSync(itemPath);
+      let itemStats;
+      try {
+        itemStats = await fs.promises.stat(itemPath);
+      } catch {
+        return;
+      }
       const relativePath = path.relative(photoDir, itemPath);
 
       if (itemStats.isDirectory()) {
-        const folder = {
-          name: item,
-          path: relativePath,
-          isDirectory: true
-        };
-        const coverImage = findCoverImage(itemPath, photoDir);
-        if (coverImage) folder.coverImage = coverImage;
-        folders.push(folder);
+        folderCandidates.push({ name: item, path: relativePath, itemPath });
       } else if (isImageFileName(item)) {
         images.push({
           name: item,
@@ -146,7 +209,18 @@ app.get('/api/files', (req, res) => {
           size: itemStats.size
         });
       }
-    });
+    }));
+
+    const folders = await Promise.all(folderCandidates.map(async ({ name, path: relativePath, itemPath }) => {
+      const folder = {
+        name,
+        path: relativePath,
+        isDirectory: true
+      };
+      const coverImage = await findCoverImage(itemPath, photoDir);
+      if (coverImage) folder.coverImage = coverImage;
+      return folder;
+    }));
 
     // Sort folders and images alphabetically
     folders.sort((a, b) => a.name.localeCompare(b.name));
@@ -182,12 +256,12 @@ function nameMatchesAllWords(name, words) {
   return words.every((word) => normalizedName.includes(word));
 }
 
-function walkAndSearch(photoDir, dirPath, words, folders, limit) {
+async function walkAndSearch(photoDir, dirPath, words, folders, limit) {
   if (folders.length >= limit) return;
 
   let entries;
   try {
-    entries = fs.readdirSync(dirPath);
+    entries = await fs.promises.readdir(dirPath);
   } catch {
     return;
   }
@@ -198,7 +272,7 @@ function walkAndSearch(photoDir, dirPath, words, folders, limit) {
     const itemPath = path.join(dirPath, entry);
     let stats;
     try {
-      stats = fs.statSync(itemPath);
+      stats = await fs.promises.stat(itemPath);
     } catch {
       continue;
     }
@@ -213,11 +287,11 @@ function walkAndSearch(photoDir, dirPath, words, folders, limit) {
         path: relativePath,
         isDirectory: true
       };
-      const coverImage = findCoverImage(itemPath, photoDir);
+      const coverImage = await findCoverImage(itemPath, photoDir);
       if (coverImage) folder.coverImage = coverImage;
       folders.push(folder);
     }
-    walkAndSearch(photoDir, itemPath, words, folders, limit);
+    await walkAndSearch(photoDir, itemPath, words, folders, limit);
   }
 }
 
@@ -225,7 +299,7 @@ function walkAndSearch(photoDir, dirPath, words, folders, limit) {
  * Search folders by name (all words must match).
  * GET /api/search?q=vacation+2024
  */
-app.get('/api/search', (req, res) => {
+app.get('/api/search', async (req, res) => {
   try {
     const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const words = queryToWords(query);
@@ -235,12 +309,12 @@ app.get('/api/search', (req, res) => {
     }
 
     const photoDir = getResolvedPhotoDir();
-    if (!photoDir || !fs.existsSync(photoDir)) {
+    if (!photoDir || !(await fs.promises.stat(photoDir).then((s) => s.isDirectory()).catch(() => false))) {
       return res.status(500).json({ error: 'Photo directory not available' });
     }
 
     const folders = [];
-    walkAndSearch(photoDir, photoDir, words, folders, SEARCH_MAX_RESULTS);
+    await walkAndSearch(photoDir, photoDir, words, folders, SEARCH_MAX_RESULTS);
 
     folders.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -264,11 +338,11 @@ app.get('/api/search', (req, res) => {
 app.get('/api/image', (req, res) => {
   try {
     const imagePath = req.query.path;
-    const photoDir = getPhotoDir();
+    const photoDir = getResolvedPhotoDir();
     const fullPath = path.resolve(photoDir, imagePath);
 
     // Security: prevent directory traversal
-    if (!fullPath.startsWith(photoDir)) {
+    if (!isPathInsidePhotoDir(fullPath, photoDir)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -293,11 +367,11 @@ app.get('/api/thumbnail', async (req, res) => {
     const requestedSize = Number(req.query.size || 300);
     const size = Number.isFinite(requestedSize) ? Math.max(48, Math.min(800, Math.floor(requestedSize))) : 300;
 
-    const photoDir = getPhotoDir();
+    const photoDir = getResolvedPhotoDir();
     const fullPath = path.resolve(photoDir, imagePath);
 
     // Security: prevent directory traversal
-    if (!fullPath.startsWith(photoDir)) {
+    if (!isPathInsidePhotoDir(fullPath, photoDir)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -359,17 +433,6 @@ function uniqueTrashDestination(trashFilesDir, basename) {
     counter += 1;
   }
   return destPath;
-}
-
-/** Resolved browsing root for path security checks. */
-function getResolvedPhotoDir() {
-  return path.resolve(getPhotoDir() || '');
-}
-
-/** True when `targetPath` is the photo root or a path inside it. */
-function isPathInsidePhotoDir(targetPath, photoDir) {
-  if (targetPath === photoDir) return true;
-  return targetPath.startsWith(photoDir + path.sep);
 }
 
 /**
@@ -458,6 +521,8 @@ app.delete('/api/file', async (req, res) => {
 
     await moveToTrash(fullPath);
     clearThumbnailCacheForPath(fullPath);
+    // Parent folder mtime changes; drop only that folder's cover entry.
+    coverCache.delete(path.dirname(fullPath));
     res.json({ success: true, message: 'File moved to trash' });
   } catch (error) {
     console.error('Error moving file to trash:', error);
@@ -491,6 +556,8 @@ app.delete('/api/directory', async (req, res) => {
 
     await moveToTrash(fullPath);
     clearThumbnailCacheForPath(fullPath);
+    clearCoverCacheForPath(fullPath);
+    coverCache.delete(path.dirname(fullPath));
     res.json({ success: true, message: 'Directory moved to trash' });
   } catch (error) {
     console.error('Error moving directory to trash:', error);
@@ -511,11 +578,11 @@ app.post('/api/reveal', (req, res) => {
       return res.status(400).json({ error: 'Invalid path' });
     }
 
-    const photoDir = getPhotoDir();
+    const photoDir = getResolvedPhotoDir();
     const fullPath = path.resolve(photoDir, itemPath);
 
     // Security: prevent directory traversal
-    if (!fullPath.startsWith(photoDir)) {
+    if (!isPathInsidePhotoDir(fullPath, photoDir)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
